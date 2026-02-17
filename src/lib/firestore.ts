@@ -1,4 +1,4 @@
-import { Firestore } from '@google-cloud/firestore';
+import { Firestore, FieldValue } from '@google-cloud/firestore';
 import { UserProfile, ChatSession, Message } from '@/types';
 
 const db = new Firestore({
@@ -68,10 +68,8 @@ export async function saveMessage(
       messages: [message],
     });
   } else {
-    const existing = doc.data() as ChatSession;
-    await ref.set({
-      ...existing,
-      messages: [...existing.messages, message],
+    await ref.update({
+      messages: FieldValue.arrayUnion(message),
     });
   }
 }
