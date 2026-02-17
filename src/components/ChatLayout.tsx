@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { Message } from '@/types';
@@ -11,8 +11,18 @@ interface Props {
   onNewSession: () => void;
 }
 
+function greeting(name: string | null | undefined): Message {
+  const firstName = name?.split(' ')[0] ?? 'there';
+  return {
+    role: 'assistant',
+    content: `Hey ${firstName}! I'm your GCP expert. What are we building today?`,
+    timestamp: Date.now(),
+  };
+}
+
 export function ChatLayout({ sessionId, onNewSession }: Props) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { data: session } = useSession();
+  const [messages, setMessages] = useState<Message[]>(() => [greeting(session?.user?.name)]);
   const [loading, setLoading] = useState(false);
 
   const handleSend = async (text: string) => {
@@ -45,7 +55,7 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
       <div className="w-64 bg-gray-900 flex flex-col p-4 gap-4 border-r border-gray-800">
         <h2 className="text-lg font-semibold">GCP Chatbot</h2>
         <button
-          onClick={() => { setMessages([]); onNewSession(); }}
+          onClick={() => { setMessages([greeting(session?.user?.name)]); onNewSession(); }}
           className="w-full py-2 px-4 bg-blue-600 rounded-lg hover:bg-blue-700 text-sm font-medium"
         >
           + New Chat
