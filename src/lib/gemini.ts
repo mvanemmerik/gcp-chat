@@ -1,12 +1,15 @@
 import { VertexAI } from '@google-cloud/vertexai';
 import { Message } from '@/types';
+import { GCP_TOOL_DECLARATIONS, executeTool } from './gcp-tools';
 
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT!,
   location: process.env.VERTEX_AI_LOCATION ?? 'us-east1',
 });
 
-const SYSTEM_PROMPT = `You are an expert Google Cloud Platform architect and engineer. You have deep knowledge of all GCP services, best practices, pricing, and architecture patterns. You remember facts about the user and their projects to give personalized advice. Be concise, practical, and direct.`;
+const SYSTEM_PROMPT = `You are an expert Google Cloud Platform architect and engineer. You have deep knowledge of all GCP services, best practices, pricing, and architecture patterns. You remember facts about the user and their projects to give personalized advice. Be concise, practical, and direct.
+
+You have tools to query the user's live GCP project. Use them when the user asks about their actual resources, services, or configuration. Present results clearly and add helpful context.`;
 
 export function buildSystemPromptWithMemory(facts: Record<string, unknown>): string {
   const factLines = Object.entries(facts)
@@ -26,6 +29,7 @@ export async function chat(
   const model = vertexAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001',
     systemInstruction: buildSystemPromptWithMemory(userFacts),
+    tools: [GCP_TOOL_DECLARATIONS],
   });
 
   const history = sessionMessages.map((m) => ({
@@ -34,8 +38,35 @@ export async function chat(
   }));
 
   const chatSession = model.startChat({ history });
-  const result = await chatSession.sendMessage(newUserMessage);
-  return result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+  // First turn
+  let result = await chatSession.sendMessage(newUserMessage);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let candidate = result.response.candidates?.[0] as any;
+
+  // Tool call loop (Gemini may call multiple tools sequentially)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  while (candidate?.content?.parts?.some((p: any) => p.functionCall)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const functionCallPart = candidate.content.parts.find((p: any) => p.functionCall);
+    if (!functionCallPart?.functionCall) break;
+
+    const { name, args } = functionCallPart.functionCall;
+    const toolResult = await executeTool(name, (args as Record<string, unknown>) ?? {});
+
+    // Send tool result back to Gemini
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    result = await chatSession.sendMessage([{
+      functionResponse: {
+        name,
+        response: { result: toolResult },
+      },
+    }] as any);
+    candidate = result.response.candidates?.[0] as any;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return candidate?.content?.parts?.find((p: any) => p.text)?.text ?? '';
 }
 
 export async function extractFacts(
