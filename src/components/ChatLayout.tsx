@@ -15,7 +15,7 @@ function greeting(name: string | null | undefined): Message {
   const firstName = name?.split(' ')[0] ?? 'there';
   return {
     role: 'assistant',
-    content: `Hey ${firstName}! I'm your GCP expert. What are we building today?`,
+    content: `Hey ${firstName}! I'm your GCP expert. What are we building today? 🚀`,
     timestamp: Date.now(),
   };
 }
