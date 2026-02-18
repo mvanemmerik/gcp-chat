@@ -4,7 +4,6 @@
 
 A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) and long-term (user profile/facts) memory. Google OAuth authentication, Next.js frontend deployed on Cloud Run.
 
-**Architecture diagram:** `/Users/monty/Desktop/Claude/outputs/gcp-chatbot-architecture.svg`
 
 ## Tech Stack
 
@@ -21,13 +20,11 @@ A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) 
 ## GCP Project
 
 - **Project**: `mvanemmerik-ai`
-- **Org**: `159824466078`
 - **Region**: `us-east1`
 - **Cloud Run service**: `gcp-chatbot`
 - **Service account**: `chatbot-sa@mvanemmerik-ai.iam.gserviceaccount.com`
   - Roles: `aiplatform.user`, `datastore.user`, `secretmanager.secretAccessor`, `viewer`, `billing.viewer` (on billing account)
 - **Custom domain**: `gcp.vanemmerik.ai` ✅ (cert provisioned, HTTPS live)
-- **Billing account**: `01AEC3-8AA1BE-E5511A`
 
 ## Key Files
 
@@ -97,10 +94,9 @@ Use `googleSearch` (Gemini 2.0 format) — `googleSearchRetrieval` is deprecated
 ## OAuth Configuration
 
 - Consent screen: "External" + Testing mode
-- Test user: `mvanemmerik.gcp@gmail.com`
 - Authorized redirect URIs:
   - `http://localhost:3000/api/auth/callback/google`
-  - `https://gcp-chatbot-1049796559731.us-east1.run.app/api/auth/callback/google`
+  - `https://gcp-chatbot-[PROJECT_NUMBER].us-east1.run.app/api/auth/callback/google`
   - `https://gcp.vanemmerik.ai/api/auth/callback/google`
 
 ## Development Commands
@@ -150,4 +146,4 @@ gcloud run services update gcp-chatbot --region=us-east1 --project=mvanemmerik-a
 - **Docker**: must use `--platform linux/amd64` — Cloud Run requires it; dev machine is Apple Silicon.
 - **Google Search vs function calling**: cannot be combined in one request. Route via `isGCPQuery()` keyword detection.
 - **`googleSearch` (not `googleSearchRetrieval`)**: use the former for Gemini 2.0 models — `googleSearchRetrieval` is deprecated and returns a 400 error.
-- **Cloud Build SA**: trigger runs as `1049796559731-compute@developer.gserviceaccount.com`, granted `artifactregistry.writer`, `run.developer`, and `iam.serviceAccountUser` on `chatbot-sa`.
+- **Cloud Build SA**: trigger runs as `[PROJECT_NUMBER]-compute@developer.gserviceaccount.com`, granted `artifactregistry.writer`, `run.developer`, and `iam.serviceAccountUser` on `chatbot-sa`.

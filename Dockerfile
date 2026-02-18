@@ -9,8 +9,8 @@ COPY . .
 
 # Provide placeholder values at build time so module-level VertexAI init succeeds.
 # Real values are injected at runtime via Cloud Run secrets/env vars.
-ARG GOOGLE_CLOUD_PROJECT=mvanemmerik-ai
-ARG VERTEX_AI_LOCATION=us-east1
+ARG GOOGLE_CLOUD_PROJECT
+ARG VERTEX_AI_LOCATION
 ENV GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
 ENV VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION}
 
