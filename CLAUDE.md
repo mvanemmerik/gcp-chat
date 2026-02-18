@@ -4,6 +4,8 @@
 
 A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) and long-term (user profile/facts) memory. Google OAuth authentication, Next.js frontend deployed on Cloud Run.
 
+**Architecture diagram:** `/Users/monty/Desktop/Claude/outputs/gcp-chatbot-architecture.svg`
+
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (App Router, TypeScript, Tailwind CSS)
