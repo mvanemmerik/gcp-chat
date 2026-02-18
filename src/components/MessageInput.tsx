@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, KeyboardEvent } from 'react';
+import { useState, useRef, KeyboardEvent } from 'react';
 
 interface Props {
   onSend: (message: string) => void;
@@ -9,12 +9,14 @@ interface Props {
 
 export function MessageInput({ onSend, disabled }: Props) {
   const [text, setText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
     onSend(trimmed);
     setText('');
+    textareaRef.current?.focus();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -28,6 +30,7 @@ export function MessageInput({ onSend, disabled }: Props) {
     <div className="p-4 border-t border-gray-800">
       <div className="flex gap-3 items-end bg-gray-900 rounded-xl p-3">
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
