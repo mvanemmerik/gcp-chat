@@ -21,19 +21,28 @@ export function buildSystemPromptWithMemory(facts: Record<string, unknown>): str
   return `${SYSTEM_PROMPT}\n\nWhat you know about the user:\n${factLines}`;
 }
 
+function isGCPQuery(message: string): boolean {
+  const keywords = ['gcp', 'google cloud', 'cloud run', 'cloud build', 'gcs', 'bucket',
+    'firestore', 'vertex', 'compute', 'gke', 'kubernetes', 'bigquery', 'pubsub', 'pub/sub',
+    'cloud function', 'iam', 'billing', 'cost', 'spend', 'artifact', 'secret manager',
+    'project', 'region', 'zone', 'api', 'service account', 'vm', 'instance', 'deployment',
+    'docker', 'container', 'image', 'network', 'vpc', 'subnet', 'firewall', 'load balancer'];
+  const lower = message.toLowerCase();
+  return keywords.some(kw => lower.includes(kw));
+}
+
 export async function chat(
   sessionMessages: Message[],
   newUserMessage: string,
   userFacts: Record<string, unknown>
 ): Promise<string> {
+  const useGCPTools = isGCPQuery(newUserMessage);
+
   const model = vertexAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001',
     systemInstruction: buildSystemPromptWithMemory(userFacts),
-    tools: [
-      GCP_TOOL_DECLARATIONS,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { googleSearchRetrieval: { dynamicRetrievalConfig: { mode: 'MODE_DYNAMIC', dynamicThreshold: 0.3 } } } as any,
-    ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: useGCPTools ? [GCP_TOOL_DECLARATIONS] : [{ googleSearchRetrieval: { dynamicRetrievalConfig: { mode: 'MODE_DYNAMIC', dynamicThreshold: 0.3 } } } as any],
   });
 
   const history = sessionMessages.map((m) => ({
