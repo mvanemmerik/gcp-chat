@@ -1,9 +1,35 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message } from '@/types';
+
+function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const code = String(children).replace(/\n$/, '');
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="relative group my-2">
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 px-2 py-1 text-xs rounded bg-gray-700 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-600"
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+      <pre className="bg-gray-900 rounded-lg p-3 overflow-x-auto text-xs">
+        <code className={className}>{children}</code>
+      </pre>
+    </div>
+  );
+}
 
 interface Props {
   messages: Message[];
@@ -42,9 +68,7 @@ export function MessageList({ messages, loading }: Props) {
                   code({ className, children, ...props }) {
                     const isBlock = className?.includes('language-');
                     return isBlock ? (
-                      <pre className="bg-gray-900 rounded-lg p-3 overflow-x-auto my-2 text-xs">
-                        <code className={className} {...props}>{children}</code>
-                      </pre>
+                      <CodeBlock className={className}>{children}</CodeBlock>
                     ) : (
                       <code className="bg-gray-900 px-1 py-0.5 rounded text-xs font-mono" {...props}>
                         {children}

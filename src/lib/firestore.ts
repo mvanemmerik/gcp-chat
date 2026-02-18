@@ -62,8 +62,10 @@ export async function saveMessage(
 
   const doc = await ref.get();
   if (!doc.exists) {
+    const title = message.content.slice(0, 50).trim() + (message.content.length > 50 ? '…' : '');
     await ref.set({
       sessionId,
+      title,
       createdAt: Date.now(),
       messages: [message],
     });
@@ -72,6 +74,27 @@ export async function saveMessage(
       messages: FieldValue.arrayUnion(message),
     });
   }
+}
+
+export async function listSessionsMeta(
+  userId: string
+): Promise<Array<{ sessionId: string; title: string; createdAt: number }>> {
+  const snapshot = await db
+    .collection(SESSIONS_COLLECTION)
+    .doc(userId)
+    .collection('sessions')
+    .orderBy('createdAt', 'desc')
+    .limit(30)
+    .select('sessionId', 'title', 'createdAt')
+    .get();
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      sessionId: data.sessionId as string,
+      title: (data.title as string) ?? 'Untitled',
+      createdAt: data.createdAt as number,
+    };
+  });
 }
 
 export async function listSessions(userId: string): Promise<ChatSession[]> {

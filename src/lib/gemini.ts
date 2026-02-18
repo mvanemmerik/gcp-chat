@@ -88,6 +88,68 @@ export async function chat(
   return candidate?.content?.parts?.find((p: any) => p.text)?.text ?? '';
 }
 
+export async function* chatStream(
+  sessionMessages: Message[],
+  newUserMessage: string,
+  userFacts: Record<string, unknown>
+): AsyncGenerator<string> {
+  const useGCPTools = isGCPQuery(newUserMessage);
+
+  const model = vertexAI.getGenerativeModel({
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001',
+    systemInstruction: buildSystemPromptWithMemory(userFacts),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: useGCPTools ? [GCP_TOOL_DECLARATIONS] : [{ googleSearch: {} } as any],
+  });
+
+  const history = sessionMessages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const chatSession = model.startChat({ history });
+
+  if (!useGCPTools) {
+    // Google Search path — real streaming
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const streamResult = await (chatSession as any).sendMessageStream(newUserMessage);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for await (const chunk of streamResult.stream) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = chunk.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text;
+      if (text) yield text;
+    }
+    return;
+  }
+
+  // GCP tools path — run function calling loop then yield final text
+  let result = await chatSession.sendMessage(newUserMessage);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let candidate = result.response.candidates?.[0] as any;
+
+  while (candidate?.content?.parts?.some((p: any) => p.functionCall)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const functionCallParts = candidate.content.parts.filter((p: any) => p.functionCall);
+    const toolResults = await Promise.all(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionCallParts.map(async (part: any) => {
+        const { name, args } = part.functionCall;
+        const toolResult = await executeTool(name, (args as Record<string, unknown>) ?? {});
+        return { name, toolResult };
+      })
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    result = await chatSession.sendMessage(toolResults.map(({ name, toolResult }) => ({
+      functionResponse: { name, response: { result: toolResult } },
+    })) as any);
+    candidate = result.response.candidates?.[0] as any;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fullText = candidate?.content?.parts?.find((p: any) => p.text)?.text ?? '';
+  yield fullText;
+}
+
 export async function extractFacts(
   userMessage: string,
   assistantReply: string,
