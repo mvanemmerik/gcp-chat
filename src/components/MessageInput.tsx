@@ -2,12 +2,22 @@
 
 import { useState, useRef, KeyboardEvent } from 'react';
 
+const SUGGESTIONS = [
+  "What's my current GCP spend?",
+  "List my Cloud Run services",
+  "What GCP APIs are enabled?",
+  "Show my project info",
+  "List my GCS buckets",
+  "Show my IAM policy",
+];
+
 interface Props {
   onSend: (message: string) => void;
   disabled: boolean;
+  showSuggestions?: boolean;
 }
 
-export function MessageInput({ onSend, disabled }: Props) {
+export function MessageInput({ onSend, disabled, showSuggestions }: Props) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -26,8 +36,27 @@ export function MessageInput({ onSend, disabled }: Props) {
     }
   };
 
+  const handleSuggestion = (s: string) => {
+    onSend(s);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="p-4 border-t border-gray-800">
+      {showSuggestions && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSuggestion(s)}
+              disabled={disabled}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-full text-xs text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex gap-3 items-end bg-gray-900 rounded-xl p-3">
         <textarea
           ref={textareaRef}

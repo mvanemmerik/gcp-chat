@@ -71,7 +71,7 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
 
       <div className="flex-1 flex flex-col">
         <MessageList messages={messages} loading={loading} />
-        <MessageInput onSend={handleSend} disabled={loading} />
+        <MessageInput onSend={handleSend} disabled={loading} showSuggestions={messages.length <= 1} />
       </div>
     </div>
   );
