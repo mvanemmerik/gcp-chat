@@ -42,7 +42,7 @@ export async function chat(
     model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001',
     systemInstruction: buildSystemPromptWithMemory(userFacts),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: useGCPTools ? [GCP_TOOL_DECLARATIONS] : [{ googleSearchRetrieval: { dynamicRetrievalConfig: { mode: 'MODE_DYNAMIC', dynamicThreshold: 0.3 } } } as any],
+    tools: useGCPTools ? [GCP_TOOL_DECLARATIONS] : [{ googleSearch: {} } as any],
   });
 
   const history = sessionMessages.map((m) => ({
