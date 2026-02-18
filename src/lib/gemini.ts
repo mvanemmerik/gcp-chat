@@ -29,7 +29,8 @@ export async function chat(
   const model = vertexAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-001',
     systemInstruction: buildSystemPromptWithMemory(userFacts),
-    tools: [GCP_TOOL_DECLARATIONS],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: [GCP_TOOL_DECLARATIONS, { googleSearch: {} } as any],
   });
 
   const history = sessionMessages.map((m) => ({

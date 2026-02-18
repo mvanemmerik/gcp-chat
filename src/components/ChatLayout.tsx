@@ -45,6 +45,12 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       console.error(err);
+      const errorMsg: Message = {
+        role: 'error' as Message['role'],
+        content: 'Something went wrong. Please try again.',
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
