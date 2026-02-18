@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { QuizModal } from './QuizModal';
 import { Message } from '@/types';
 
 interface SessionMeta {
@@ -30,6 +31,7 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
   const { data: session } = useSession();
   const [messages, setMessages] = useState<Message[]>(() => [greeting(session?.user?.name)]);
   const [loading, setLoading] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<SessionMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState(sessionId);
 
@@ -137,6 +139,12 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
         >
           + New Chat
         </button>
+        <button
+          onClick={() => setQuizOpen(true)}
+          className="w-full py-2 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg text-xs font-medium shrink-0 text-left leading-snug"
+        >
+          Help me prepare for the Generative AI Leader exam
+        </button>
 
         {/* Session history */}
         <div className="flex-1 overflow-y-auto flex flex-col gap-1 min-h-0">
@@ -173,6 +181,8 @@ export function ChatLayout({ sessionId, onNewSession }: Props) {
           showSuggestions={messages.length <= 1}
         />
       </div>
+
+      {quizOpen && <QuizModal onClose={() => setQuizOpen(false)} />}
     </div>
   );
 }
