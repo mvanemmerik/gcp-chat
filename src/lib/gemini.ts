@@ -44,24 +44,30 @@ export async function chat(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let candidate = result.response.candidates?.[0] as any;
 
-  // Tool call loop (Gemini may call multiple tools sequentially)
+  // Tool call loop — handle all function calls in a turn together
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   while (candidate?.content?.parts?.some((p: any) => p.functionCall)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const functionCallPart = candidate.content.parts.find((p: any) => p.functionCall);
-    if (!functionCallPart?.functionCall) break;
+    const functionCallParts = candidate.content.parts.filter((p: any) => p.functionCall);
 
-    const { name, args } = functionCallPart.functionCall;
-    const toolResult = await executeTool(name, (args as Record<string, unknown>) ?? {});
+    // Execute all tool calls in this turn in parallel
+    const toolResults = await Promise.all(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      functionCallParts.map(async (part: any) => {
+        const { name, args } = part.functionCall;
+        const toolResult = await executeTool(name, (args as Record<string, unknown>) ?? {});
+        return { name, toolResult };
+      })
+    );
 
-    // Send tool result back to Gemini
+    // Send ALL responses back in one message (count must match function call count)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    result = await chatSession.sendMessage([{
+    result = await chatSession.sendMessage(toolResults.map(({ name, toolResult }) => ({
       functionResponse: {
         name,
         response: { result: toolResult },
       },
-    }] as any);
+    })) as any);
     candidate = result.response.candidates?.[0] as any;
   }
 
