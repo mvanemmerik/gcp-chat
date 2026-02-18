@@ -31,22 +31,24 @@ A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) 
 
 | File | Purpose |
 |------|---------|
-| `src/lib/gemini.ts` | Vertex AI client, tool routing, function calling loop, fact extraction |
+| `src/lib/gemini.ts` | Vertex AI client, `chat()`, `chatStream()` generator, tool routing, fact extraction |
 | `src/lib/gcp-tools.ts` | 8 GCP tool implementations + Gemini declarations |
-| `src/lib/firestore.ts` | Firestore data layer (sessions, user profiles) |
+| `src/lib/firestore.ts` | Firestore data layer (sessions, user profiles, session metadata) |
 | `src/lib/auth.ts` | NextAuth config with Google provider |
-| `src/app/api/chat/route.ts` | POST handler — auth guard, Gemini call, fact extraction |
-| `src/components/ChatLayout.tsx` | Main chat UI with sidebar, suggestion chips |
+| `src/app/api/chat/route.ts` | POST handler — SSE streaming response |
+| `src/app/api/sessions/route.ts` | GET handler — list session metadata or load full session by `?id=` |
+| `src/components/ChatLayout.tsx` | Main chat UI, SSE stream reader, session history sidebar |
 | `src/components/MessageInput.tsx` | Chat input with auto-focus, predefined suggestion chips |
-| `src/components/MessageList.tsx` | Markdown message rendering, animated typing dots, error bubbles |
+| `src/components/MessageList.tsx` | Markdown rendering, copy buttons, animated typing dots, error bubbles |
 | `src/types/index.ts` | Shared TypeScript interfaces |
 | `Dockerfile` | Multi-stage build (linux/amd64) |
 | `cloudbuild.yaml` | CI/CD: build → push to Artifact Registry → deploy to Cloud Run |
 
 ## Firestore Collections
 
-- `chat_sessions/{sessionId}` — `{ userId, messages: Message[], createdAt, updatedAt }`
-- `user_profiles/{userId}` — `{ facts: Record<string, unknown>, updatedAt }`
+- `chat_sessions/{userId}/sessions/{sessionId}` — `{ sessionId, title, messages: Message[], createdAt }`
+  - `title` is set from the first user message (50 char truncation) on session creation
+- `user_profiles/{userId}` — `{ userId, email, name, facts: Record<string, unknown>, createdAt, lastUpdated }`
 
 ## GCP Function Calling Tools (8 total)
 
@@ -62,12 +64,32 @@ Routing logic in `isGCPQuery()`:
 
 Use `googleSearch` (Gemini 2.0 format) — `googleSearchRetrieval` is deprecated and not supported for `gemini-2.0-flash-001`.
 
+## Streaming (chat/route.ts + gemini.ts + ChatLayout.tsx)
+
+`/api/chat` returns `text/event-stream` (SSE). Each chunk is `data: {"chunk":"..."}`, terminated by `data: [DONE]`.
+
+- **Non-GCP queries** (Google Search path): real token-by-token streaming via `sendMessageStream()`
+- **GCP tool queries**: function calling loop runs synchronously, then full text yielded in one chunk
+- Frontend (`ChatLayout`): typing dots show until first chunk, then transitions to streamed text being appended in place
+- Full reply accumulated in stream handler before saving to Firestore and running fact extraction
+
+## Session History
+
+- Sessions listed in sidebar, loaded via `GET /api/sessions` (metadata only: sessionId, title, createdAt)
+- Click a session → `GET /api/sessions?id={sessionId}` → loads full messages
+- `listSessionsMeta` uses Firestore `.select()` for efficient metadata-only reads (no messages fetched)
+- Session title set from first user message on creation (50 char truncation with ellipsis)
+- History refreshes after each `[DONE]` event
+
 ## UI Features
 
+- **Streaming**: text appears progressively as Gemini generates
+- **Session history**: past conversations in sidebar with auto-generated titles
+- **Copy buttons**: hover any code block → "Copy" button appears top-right, shows "Copied!" for 2s
 - **Suggestion chips**: 6 predefined prompts shown on fresh chat (hidden once conversation starts)
 - **Markdown rendering**: code blocks, tables, lists, links rendered in bot responses
-- **Animated typing indicator**: 3 bouncing dots while waiting for response
-- **Error bubbles**: failed requests show red error message in chat (not silent)
+- **Animated typing indicator**: 3 bouncing dots while waiting for first chunk
+- **Error bubbles**: failed requests show red message in chat (not silent)
 - **Auto-focus**: input refocuses after every message send
 
 ## OAuth Configuration
@@ -121,6 +143,7 @@ gcloud run services update gcp-chatbot --region=us-east1 --project=mvanemmerik-a
 ## Important Notes
 
 - **Multi-function calls**: Gemini can return multiple `functionCall` parts in one turn — collect all with `.filter()`, execute in parallel with `Promise.all()`, send all responses back in one `sendMessage()` call. Using `.find()` (only first) causes a 400 INVALID_ARGUMENT error.
+- **SSE streaming**: `/api/chat` uses `ReadableStream` with `text/event-stream`. Firestore save and fact extraction happen after stream completes (inside the `[DONE]` handler, not before streaming starts).
 - **Firestore saves**: use `FieldValue.arrayUnion(message)` for atomic appends — no read-modify-write race condition.
 - **Docker**: must use `--platform linux/amd64` — Cloud Run requires it; dev machine is Apple Silicon.
 - **Google Search vs function calling**: cannot be combined in one request. Route via `isGCPQuery()` keyword detection.
