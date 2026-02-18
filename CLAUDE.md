@@ -12,8 +12,9 @@ A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) 
 - **Database**: Firestore (Native mode, us-east1) — sessions + user profiles
 - **Hosting**: Cloud Run (us-east1), Docker (linux/amd64)
 - **Registry**: Artifact Registry — `us-east1-docker.pkg.dev/mvanemmerik-ai/chatbot-repo/gcp-chatbot`
-- **CI/CD**: Cloud Build trigger on push to `main` using `cloudbuild.yaml`
+- **CI/CD**: Cloud Build trigger (`deploy-on-push-to-main`) on push to `main` using `cloudbuild.yaml`
 - **Secrets**: Secret Manager (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL)
+- **Markdown**: `react-markdown` + `remark-gfm` for rendering bot responses
 
 ## GCP Project
 
@@ -22,34 +23,61 @@ A personal GCP-hosted chatbot web app using Gemini AI with short-term (session) 
 - **Region**: `us-east1`
 - **Cloud Run service**: `gcp-chatbot`
 - **Service account**: `chatbot-sa@mvanemmerik-ai.iam.gserviceaccount.com`
-  - Roles: `aiplatform.user`, `datastore.user`, `secretmanager.secretAccessor`, `viewer`
-- **Custom domain**: `gcp.vanemmerik.ai` (cert provisioning in progress)
+  - Roles: `aiplatform.user`, `datastore.user`, `secretmanager.secretAccessor`, `viewer`, `billing.viewer` (on billing account)
+- **Custom domain**: `gcp.vanemmerik.ai` ✅ (cert provisioned, HTTPS live)
+- **Billing account**: `01AEC3-8AA1BE-E5511A`
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/lib/gemini.ts` | Vertex AI client, function calling loop, fact extraction |
-| `src/lib/gcp-tools.ts` | 7 GCP tool implementations + Gemini declarations |
+| `src/lib/gemini.ts` | Vertex AI client, tool routing, function calling loop, fact extraction |
+| `src/lib/gcp-tools.ts` | 8 GCP tool implementations + Gemini declarations |
 | `src/lib/firestore.ts` | Firestore data layer (sessions, user profiles) |
 | `src/lib/auth.ts` | NextAuth config with Google provider |
 | `src/app/api/chat/route.ts` | POST handler — auth guard, Gemini call, fact extraction |
-| `src/components/ChatLayout.tsx` | Main chat UI with sidebar |
-| `src/components/MessageInput.tsx` | Chat input with auto-focus after send |
-| `src/components/MessageList.tsx` | Message rendering |
+| `src/components/ChatLayout.tsx` | Main chat UI with sidebar, suggestion chips |
+| `src/components/MessageInput.tsx` | Chat input with auto-focus, predefined suggestion chips |
+| `src/components/MessageList.tsx` | Markdown message rendering, animated typing dots, error bubbles |
 | `src/types/index.ts` | Shared TypeScript interfaces |
 | `Dockerfile` | Multi-stage build (linux/amd64) |
-| `cloudbuild.yaml` | CI/CD: build → push → deploy to Cloud Run |
+| `cloudbuild.yaml` | CI/CD: build → push to Artifact Registry → deploy to Cloud Run |
 
 ## Firestore Collections
 
 - `chat_sessions/{sessionId}` — `{ userId, messages: Message[], createdAt, updatedAt }`
 - `user_profiles/{userId}` — `{ facts: Record<string, unknown>, updatedAt }`
 
-## GCP Function Calling Tools
+## GCP Function Calling Tools (8 total)
 
-The bot has 7 live tools to query the user's GCP project:
-`listCloudRunServices`, `listGCSBuckets`, `listFirestoreCollections`, `listVMs`, `getProjectInfo`, `listEnabledAPIs`, `getIAMPolicy`
+`listCloudRunServices`, `listGCSBuckets`, `listFirestoreCollections`, `listVMs`, `getProjectInfo`, `listEnabledAPIs`, `getIAMPolicy`, `getGCPCosts`
+
+## Tool Routing (gemini.ts)
+
+Gemini cannot mix `googleSearch` grounding with `functionDeclarations` in the same request — they are mutually exclusive in Vertex AI.
+
+Routing logic in `isGCPQuery()`:
+- **GCP keywords detected** → use `GCP_TOOL_DECLARATIONS` (live resource queries)
+- **Non-GCP question** → use `{ googleSearch: {} }` grounding (real-time web search)
+
+Use `googleSearch` (Gemini 2.0 format) — `googleSearchRetrieval` is deprecated and not supported for `gemini-2.0-flash-001`.
+
+## UI Features
+
+- **Suggestion chips**: 6 predefined prompts shown on fresh chat (hidden once conversation starts)
+- **Markdown rendering**: code blocks, tables, lists, links rendered in bot responses
+- **Animated typing indicator**: 3 bouncing dots while waiting for response
+- **Error bubbles**: failed requests show red error message in chat (not silent)
+- **Auto-focus**: input refocuses after every message send
+
+## OAuth Configuration
+
+- Consent screen: "External" + Testing mode
+- Test user: `mvanemmerik.gcp@gmail.com`
+- Authorized redirect URIs:
+  - `http://localhost:3000/api/auth/callback/google`
+  - `https://gcp-chatbot-1049796559731.us-east1.run.app/api/auth/callback/google`
+  - `https://gcp.vanemmerik.ai/api/auth/callback/google`
 
 ## Development Commands
 
@@ -77,16 +105,24 @@ GEMINI_FLASH_MODEL=gemini-2.0-flash-001
 
 ## Deployment
 
-Push to `main` → Cloud Build auto-triggers → builds image → deploys to Cloud Run.
+Push to `main` → Cloud Build auto-triggers → builds image → deploys to Cloud Run (~4 min).
 
-Manual deploy check:
 ```bash
-gcloud run services describe gcp-chatbot --region=us-east1 --project=mvanemmerik-ai
+# Check build status
+gcloud builds list --project=mvanemmerik-ai --limit=3
+
+# Check cert/domain status
+gcloud beta run domain-mappings describe --domain gcp.vanemmerik.ai --region us-east1 --project mvanemmerik-ai
+
+# Manual redeploy (e.g. after secret update)
+gcloud run services update gcp-chatbot --region=us-east1 --project=mvanemmerik-ai --update-secrets=NEXTAUTH_URL=NEXTAUTH_URL:latest
 ```
 
 ## Important Notes
 
-- Gemini can return multiple `functionCall` parts in one turn — always send all responses back together (not one at a time)
-- Firestore `saveMessage` uses `FieldValue.arrayUnion` for atomic appends (no read-modify-write race)
-- Docker build must use `--platform linux/amd64` (Cloud Run requires it; dev machine is Apple Silicon)
-- OAuth consent screen is "External" + Testing mode; test user: `mvanemmerik.gcp@gmail.com`
+- **Multi-function calls**: Gemini can return multiple `functionCall` parts in one turn — collect all with `.filter()`, execute in parallel with `Promise.all()`, send all responses back in one `sendMessage()` call. Using `.find()` (only first) causes a 400 INVALID_ARGUMENT error.
+- **Firestore saves**: use `FieldValue.arrayUnion(message)` for atomic appends — no read-modify-write race condition.
+- **Docker**: must use `--platform linux/amd64` — Cloud Run requires it; dev machine is Apple Silicon.
+- **Google Search vs function calling**: cannot be combined in one request. Route via `isGCPQuery()` keyword detection.
+- **`googleSearch` (not `googleSearchRetrieval`)**: use the former for Gemini 2.0 models — `googleSearchRetrieval` is deprecated and returns a 400 error.
+- **Cloud Build SA**: trigger runs as `1049796559731-compute@developer.gserviceaccount.com`, granted `artifactregistry.writer`, `run.developer`, and `iam.serviceAccountUser` on `chatbot-sa`.
