@@ -117,9 +117,55 @@ export async function getIAMPolicy(): Promise<string> {
   }
 }
 
+export async function getGCPCosts(): Promise<string> {
+  try {
+    // Get billing account linked to the project
+    const billingInfo = await authenticatedGet(
+      `https://cloudbilling.googleapis.com/v1/projects/${PROJECT}/billingInfo`
+    ) as { billingAccountName?: string; billingEnabled?: boolean };
+
+    if (!billingInfo.billingEnabled) return 'Billing is not enabled on this project.';
+
+    const billingAccount = billingInfo.billingAccountName; // e.g. billingAccounts/01AEC3-xxx
+
+    // Get budgets (includes actual spend for current period)
+    const budgets = await authenticatedGet(
+      `https://billingbudgets.googleapis.com/v1/${billingAccount}/budgets`
+    ) as { budgets?: Array<{
+      displayName?: string;
+      amount?: { specifiedAmount?: { units?: string; nanos?: number }; lastPeriodAmount?: object };
+      budgetFilter?: { projects?: string[] };
+      currentSpend?: { units?: string; nanos?: number };
+    }> };
+
+    const lines: string[] = [`Billing account: ${billingAccount}`];
+
+    if (budgets.budgets?.length) {
+      lines.push('\nBudgets & current spend:');
+      for (const b of budgets.budgets) {
+        const name = b.displayName ?? 'Unnamed budget';
+        const spend = b.currentSpend;
+        const spendAmt = spend
+          ? `$${(Number(spend.units ?? 0) + (spend.nanos ?? 0) / 1e9).toFixed(2)}`
+          : 'unknown';
+        const budgetAmt = b.amount?.specifiedAmount
+          ? `$${Number(b.amount.specifiedAmount.units ?? 0).toFixed(2)}`
+          : b.amount?.lastPeriodAmount ? 'last period amount' : 'unknown';
+        lines.push(`• ${name}: ${spendAmt} spent of ${budgetAmt} budget`);
+      }
+    } else {
+      lines.push('\nNo budgets configured. Set up a budget in the GCP console to track spend.');
+    }
+
+    return lines.join('\n');
+  } catch (e: unknown) {
+    return `Error fetching cost data: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
 // ── Tool dispatcher ───────────────────────────────────────────────────────────
 
-type ToolName = 'listCloudRunServices' | 'listGCSBuckets' | 'listFirestoreCollections' | 'listVMs' | 'getProjectInfo' | 'listEnabledAPIs' | 'getIAMPolicy';
+type ToolName = 'listCloudRunServices' | 'listGCSBuckets' | 'listFirestoreCollections' | 'listVMs' | 'getProjectInfo' | 'listEnabledAPIs' | 'getIAMPolicy' | 'getGCPCosts';
 
 export async function executeTool(name: string, _args: Record<string, unknown>): Promise<string> {
   const handlers: Record<ToolName, () => Promise<string>> = {
@@ -130,6 +176,7 @@ export async function executeTool(name: string, _args: Record<string, unknown>):
     getProjectInfo,
     listEnabledAPIs,
     getIAMPolicy,
+    getGCPCosts,
   };
   const handler = handlers[name as ToolName];
   if (!handler) return `Unknown tool: ${name}`;
@@ -177,6 +224,11 @@ export const GCP_TOOL_DECLARATIONS = {
     {
       name: 'getIAMPolicy',
       description: 'Get the IAM policy for the GCP project, showing all role bindings.',
+      parameters: { type: OBJECT_TYPE, properties: {} },
+    },
+    {
+      name: 'getGCPCosts',
+      description: 'Get GCP billing information including the billing account and any configured budgets with their current spend.',
       parameters: { type: OBJECT_TYPE, properties: {} },
     },
   ],
